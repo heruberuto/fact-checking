@@ -1,0 +1,2 @@
+# fact-checking
+The task of this semestral project is to explore the current state-of-the-art in fact-checking aimed at applications in journalism and develop ML-based methods and/or tools that would aide journalists in finding relevant information to support or disprove facts in consideration. The ultimate goal of this project is to perform ranked semantic search of a given query (a sentence or short block of text written in natural language) based on a reference fact database, which in our case is the Czech News Agency news archive.
