@@ -82,7 +82,7 @@ def load(mapping):
         if val is None:
             j += 1
         i += 1
-    print(f"Of {i} articles: {i - j} preserved, {j} lost, of which {k} due to normalization", file=sys.stderr)
+    print(f"Of {i} wiki articles: {i - j} preserved, {j} lost, of which {k} due to normalization", file=sys.stderr)
 
 
 def localize_evidence(evidences, mapping):
