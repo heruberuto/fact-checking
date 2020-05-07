@@ -85,11 +85,15 @@ def load(mapping):
     print(f"Of {i} wiki articles: {i - j} preserved, {j} lost, of which {k} due to normalization", file=sys.stderr)
 
 
-def localize_evidence(evidences, mapping):
+TOSSED = KEPT = 0
+
+
+def localize_evidence(evidence_set_set, mapping):
+    global TOSSED, KEPT
     result = []
-    for ev in evidences:
+    for evidence_set in evidence_set_set:
         ev_ = []
-        for article in ev:
+        for article in evidence_set:
             title = parse_title(article[2])
             if title is not None and title in mapping and mapping[title] is not None:
                 article[2] = mapping[title]
@@ -97,8 +101,11 @@ def localize_evidence(evidences, mapping):
                 ev_.append(article)
             else:
                 break
-        if len(ev) == len(ev_):
+        if len(evidence_set) == len(ev_):
             result.append(ev_)
+            KEPT += 1
+        else:
+            TOSSED += 1
     return result
 
 
@@ -124,7 +131,7 @@ if __name__ == "__main__":
         load(mapping)
         result = []
         aborted = not_verifiable = 0
-        with open('cs.jsonl', 'w') as saved, open('lost.jsonl', 'w') as lost, open('mapping.json', 'w') as map_file:
+        with open('csff.jsonl', 'w') as saved, open('lost.jsonl', 'w') as lost, open('mapping.json', 'w') as map_file:
             for data_point in data_points:
                 evs = localize_evidence(data_point['evidence'], mapping)
                 if len(evs) > 0 or data_point["verifiable"] == "NOT VERIFIABLE":
@@ -137,3 +144,4 @@ if __name__ == "__main__":
                     aborted += 1
             json.dump(mapping, map_file)
         print(f"Of {len(data_points)} data points, {len(result)} survived the localization (of which {not_verifiable} was not verifiable), {aborted} didn't")
+        print(f"{TOSSED} evidences tossed, {KEPT} kept")
