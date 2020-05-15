@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-
+import hashlib
 import json
 import os
 import sys
@@ -7,8 +7,40 @@ import urllib
 
 import requests
 from slugify import slugify
+from google.cloud import translate_v3  # TODO: pip install google-cloud-translate
 
-SOURCE_LANGUAGE, TARGET_LANGUAGE, BUFFER_SIZE = "en", "cs", 10
+GOOGLE_CLIENT = translate_v3.TranslationServiceClient()
+
+SOURCE_FILE, SOURCE_LANGUAGE, TARGET_FILE, TARGET_LANGUAGE = sys.stdin, "en", sys.stdout, "cs"
+GOOGLE_PATH, GOOGLE_BUFFER_SIZE = GOOGLE_CLIENT.location_path("supple-century-275511", "us-central1"), 200
+WIKI_PATH, WIKI_BUFFER_SIZE = "https://{}.wikipedia.org/w/api.php?action=query&titles={}&prop=langlinks&format=json&lllang={}", 10
+
+
+def fetch_google_response(buffer):
+    path = "cache/_gtranslate_" + hashlib.md5("".join(buffer).encode('utf-8')).hexdigest() + ".json"
+    if not os.path.exists(path):
+        response = GOOGLE_CLIENT.translate_text(parent=GOOGLE_PATH, contents=buffer, mime_type="text/plain",
+                                                source_language_code=SOURCE_LANGUAGE,
+                                                target_language_code=TARGET_LANGUAGE)
+        result = [translation.translated_text for translation in response.translations]
+        with open(path, 'w') as cache:
+            json.dump(result, cache)
+        return result
+    else:
+        with open(path, 'r') as cache:
+            return json.load(cache)
+
+
+def google_translate(data_points):
+    buffer = []
+    for i in range(len(data_points)):
+        buffer.append(data_points[i]["claim"])
+        if len(buffer) == GOOGLE_BUFFER_SIZE or i == len(data_points) - 1:
+            translations = fetch_google_response(buffer)
+            for j in range(len(buffer)):
+                data_points[i - j]["claim"] = translations[-j]
+                data_points[i - j]["claim_" + SOURCE_LANGUAGE] = buffer[-j]
+            buffer = []
 
 
 def file_infix(titles):
@@ -35,8 +67,7 @@ def fetch_localizations(titles):
 
 def compose_address(titles):
     titles = [urllib.parse.quote(title) for title in titles]
-    return "https://{}.wikipedia.org/w/api.php?action=query&titles={}&prop=langlinks&format=json&lllang={}" \
-        .format(SOURCE_LANGUAGE, "|".join(titles), TARGET_LANGUAGE)
+    return WIKI_PATH.format(SOURCE_LANGUAGE, "|".join(titles), TARGET_LANGUAGE)
 
 
 def parse_title(stanford_title):
@@ -57,7 +88,7 @@ def load(mapping):
     buffer = []
     for k in mapping.keys():
         buffer.append(k)
-        if len(buffer) == BUFFER_SIZE:
+        if len(buffer) == WIKI_BUFFER_SIZE:
             responses.append(fetch_localizations(buffer))
             buffer = []
     k = 0
@@ -110,38 +141,43 @@ def localize_evidence(evidence_set_set, mapping):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Invalid number of arguments. >=1 expected.")
-        exit(1)
+    if len(sys.argv) > 1:
+        SOURCE_FILE = open(sys.argv[1], "r")
     if len(sys.argv) > 2:
         SOURCE_LANGUAGE = sys.argv[2]
     if len(sys.argv) > 3:
-        TARGET_LANGUAGE = sys.argv[3]
+        TARGET_FILE = open(sys.argv[3], "w", encoding='utf-8')
+    if len(sys.argv) > 4:
+        TARGET_LANGUAGE = sys.argv[4]
 
-    with open(sys.argv[1], "r") as f:
-        mapping = {}
-        data_points = []
-        for line in f:
-            data_point = json.loads(line)
-            data_points.append(data_point)
-            for sufficient_evidence in data_point['evidence']:
-                for article in sufficient_evidence:
-                    if article[2] is not None:
-                        mapping[parse_title(article[2])] = None
-        load(mapping)
-        result = []
-        aborted = not_verifiable = 0
-        with open('csff.jsonl', 'w') as saved, open('lost.jsonl', 'w') as lost, open('mapping.json', 'w') as map_file:
-            for data_point in data_points:
-                evs = localize_evidence(data_point['evidence'], mapping)
-                if len(evs) > 0 or data_point["verifiable"] == "NOT VERIFIABLE":
-                    if data_point["verifiable"] == "NOT VERIFIABLE": not_verifiable += 1
-                    data_point['evidence'] = evs
-                    result.append(data_point)
-                    print(json.dumps(data_point), file=saved)
-                else:
-                    print(json.dumps(data_point), file=lost)
-                    aborted += 1
-            json.dump(mapping, map_file)
-        print(f"Of {len(data_points)} data points, {len(result)} survived the localization (of which {not_verifiable} was not verifiable), {aborted} didn't")
-        print(f"{TOSSED} evidences tossed, {KEPT} kept")
+    mapping = {}
+    data_points = []
+    for line in SOURCE_FILE:
+        data_point = json.loads(line)
+        data_points.append(data_point)
+        for sufficient_evidence in data_point['evidence']:
+            for article in sufficient_evidence:
+                if article[2] is not None:
+                    mapping[parse_title(article[2])] = None
+    load(mapping)
+    result = []
+    aborted = not_verifiable = 0
+    with open('aux_lost_points.jsonl', 'w') as lost, open('aux_mapping.json', 'w') as map_file:
+        to_save = []
+        for data_point in data_points:
+            evs = localize_evidence(data_point['evidence'], mapping)
+            if len(evs) > 0 or data_point["verifiable"] == "NOT VERIFIABLE":
+                if data_point["verifiable"] == "NOT VERIFIABLE": not_verifiable += 1
+                data_point['evidence'] = evs
+                result.append(data_point)
+            else:
+                print(json.dumps(data_point), file=lost)
+                aborted += 1
+        json.dump(mapping, map_file)
+
+    google_translate(result)
+    TARGET_FILE.writelines(json.dumps(data_point, ensure_ascii=False) + "\n" for data_point in result)
+    SOURCE_FILE.close(), TARGET_FILE.close()
+    print(
+        f"Of {len(data_points)} data points, {len(result)} survived the localization (of which {not_verifiable} was not verifiable), {aborted} didn't")
+    print(f"{TOSSED} evidences tossed, {KEPT} kept")
