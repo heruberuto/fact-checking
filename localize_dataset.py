@@ -38,8 +38,8 @@ def google_translate(data_points):
         if len(buffer) == GOOGLE_BUFFER_SIZE or i == len(data_points) - 1:
             translations = fetch_google_response(buffer)
             for j in range(len(buffer)):
-                data_points[i - j]["claim"] = translations[-j]
-                data_points[i - j]["claim_" + SOURCE_LANGUAGE] = buffer[-j]
+                data_points[i - j]["claim"] = translations[-j - 1]
+                data_points[i - j]["claim_" + SOURCE_LANGUAGE] = buffer[-j - 1]
             buffer = []
 
 
