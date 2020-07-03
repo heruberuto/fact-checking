@@ -1,3 +1,5 @@
+from unicodedata import normalize
+
 import json
 
 import six
@@ -158,22 +160,31 @@ def fever_score(predictions, actual=None, max_evidence=5):
     return strict_score, acc_score, pr, rec, f1
 
 
-with open("/home/bertik/diplomka/fever-scorer/res.test.jsonl") as ir_, open(
-        "/home/bertik/diplomka/fever-scorer/test.jsonl") as actual_:
-    predictions, actual = [], []
-    for line in ir_:
-        predictions.append(json.loads(line))
-    for line in actual_:
-        actual.append(json.loads(line))
+if __name__ == "__main__":
+    with open("/home/bertik/diplomka/fact-checking/results/res_.test.jsonl") as a, open(
+           "/home/bertik/diplomka/fact-checking/results/res.test.jsonl", "w") as b:
+       for line in a:
+           print(json.dumps(json.loads(line), ensure_ascii=False), file=b)
 
-    strict_score, label_accuracy, precision, recall, f1 = fever_score(predictions, actual)
-    # 0.050009192866335726 0.4212171355028498 0.029420606723148647 0.2514348182563542 0.05267738663026659
-    print(strict_score, label_accuracy, precision, recall, f1)
-    for prediction, act in zip(predictions, actual):
-        predicted_evidence, actual_evidence = prediction["predicted_evidence"], act["evidence"]
-        predicted_evidence, actual_evidence = set(e for e,_ in predicted_evidence), \
-                                              [set(e[2] for e in b) for b in actual_evidence]
-        print(predicted_evidence)
-        print(actual_evidence)
+    with open("/home/bertik/diplomka/fact-checking/results/res.test.jsonl") as ir_, open(
+            "/home/bertik/diplomka/fact-checking/results/test.jsonl") as actual_:
+        predictions, actual = [], []
+        for line in ir_:
+            predictions.append(json.loads(normalize('NFC',line)))
+        for line in actual_:
+            actual.append(json.loads(normalize('NFC',line)))
 
+        strict_score, label_accuracy, precision, recall, f1 = fever_score(predictions, actual)
+        # 0.050009192866335726 0.4212171355028498 0.029420606723148647 0.2514348182563542 0.05267738663026659
+        print(strict_score, label_accuracy, precision, recall, f1)
+        accurate = 0
+        for prediction, act in zip(predictions, actual):
+            predicted_evidence, actual_evidence = prediction["predicted_evidence"], act["evidence"]
+            predicted_evidence, actual_evidence = set(e for e, _ in predicted_evidence), \
+                                                  [set(e[2] for e in b) for b in actual_evidence]
+            print("Predicted Evidence: ", predicted_evidence)
+            print("Actual Evidence: ", actual_evidence)
+            print("Is subset of PE?", [S <= predicted_evidence for S in actual_evidence])
+            accurate += any([S <= predicted_evidence for S in actual_evidence])
 
+    print("Accurate evidence sets:", accurate)
